@@ -1,0 +1,164 @@
+#ifndef _itkParameterizedTriangleMesh_h
+#define _itkParameterizedTriangleMesh_h
+
+#include "itkIndexedTriangleMesh.h"
+
+namespace itk
+{
+  /** \class ParameterizedTriangleMesh
+  *   \brief Base class for a surface parameterization of a 3D, 2-manifold mesh 
+  *          consisting exclusively of triangle cells.
+  *
+  * It extends it by adding methods for mapping between parameter and object 
+  * space. Although coordinates in parameter space can be expressed using only 
+  * two values (since the mesh is a two-manifold), all mapping methods use the 
+  * inherited, three-dimensional PointType to pass parameter coordinates. 
+  * How to convert from this PointType to the two-dimensional parameter 
+  * coordinates is up to the individual subclasses.
+  * The method MapCoordinates() maps coordinates from parameter space to object
+  * space. Object space coordinates are represented as a face index and 
+  * barycentric coordinates inside this face. If the face the mapping will 
+  * result in is already known or suspected, the method CoordinatesInFace() 
+  * can be used to find the exact barycentric coordinates.
+  * To display the parameterization graphically in a 2D-image (e.g. for 
+  * purposes of texture mapping), usually a number of different patches 
+  * (images) are used to minimize distortion. The number of patches can be 
+  * assessed using GetNumberOfPatches(). The patch which should be used to 
+  * display a certain face with minimal distortion can be queried with 
+  * GetPatchIndexForFace(). Once the patch is known, the two methods 
+  * MapParameterizationToPatch() and MapPatchToParameterization() can be used 
+  * to map coordinates from one domain to the other. Patch coordinates always 
+  * lie in the range of [0..1].
+  * UpdateParameterization() can be used to copy the parameterization from 
+  * another ParameterizedTriangleMesh (usually one modified by a filter 
+  * operation). If the parameterization for a specific point was changed 
+  * during this process can be queried by GetParameterizationModified(). 
+  * The method SetParameterizationModified() allows filters to set this 
+  * modified value for a specific point or for all points.
+  * All presented methods are declared virtual and - with the exception of 
+  * the Get/SetParameterizationModified() methods – have to be implemented 
+  * in subclasses.
+  *
+  * \author Tobias Heimann. Division Medical and Biological Informatics, 
+  *         German Cancer Research Center, Heidelberg, Germany.
+  */
+  template<
+    typename TPixelType, 
+    typename TIndex = unsigned int,
+    typename TCoordRepType = double
+  >
+  class ParameterizedTriangleMesh : public IndexedTriangleMesh
+    <TPixelType, TIndex, TCoordRepType>
+  {
+
+  public:
+
+    /** Standard class typedefs. */
+    typedef ParameterizedTriangleMesh         Self;
+    typedef IndexedTriangleMesh<TPixelType, 
+      TIndex, TCoordRepType>                  Superclass;
+    typedef SmartPointer<Self>                Pointer;
+    typedef SmartPointer<const Self>          ConstPointer;
+
+    /** Convenient typedefs. */
+    typedef Superclass                        IndexedTriangleMeshType;
+    typedef typename Superclass::Pointer      IndexedTriangleMeshPointer;
+    typedef typename Superclass::ConstPointer IndexedTriangleMeshConstPointer;
+    typedef typename Superclass::PointType    PointType;
+    typedef typename Superclass::VectorType   VectorType;
+    typedef typename Superclass::IndexType    IndexType;
+    typedef typename Superclass::CoordRepType CoordRepType;
+    typedef Point<CoordRepType,2>             PatchPointType;
+
+    /** Run-time type information (and related methods). */
+    itkTypeMacro( ParameterizedTriangleMesh, IndexedTriangleMesh );
+
+    /** Finds the the barycentric coordinates and corresponding triangle for 
+    * coordinates in parameter space. 
+    * \returns true if parameter coordinates were valid and mapping 
+    *          successful, else false
+    */
+    virtual bool MapCoordinates( const PointType parameterCoordinates, 
+      IndexType &faceIndex, double &barycentricP, double &barycentricQ ) 
+      const = 0; 
+
+    /** Checks if the supplied parameterCoordinates are lying within the 
+    * specified face.If yes, the method returns true and writes the exact 
+    * barycentric coordinates to p1 and p2.
+    */
+    virtual bool CoordinatesInFace( int faceId, 
+      const PointType parameterCoordinates, double &p1, double &p2 ) const = 0;
+
+    /** Copies the parameterization of source. */
+    virtual void UpdateParameterization( Pointer source ) = 0;
+
+    /** Checks if the parameterization has been modified around a particular 
+    * point by the last UpdateParameterization() or a filter operation. 
+    * This is used to set up a cache of values in the 
+    * RemeshParameterizedMeshFilter class.
+    * If UpdateParameterization() has not been called yet and the object is
+    * not the result of a filter operation, the method always returns true.
+    */
+    virtual bool GetParameterizationModified( IndexType pointId ) const
+    {
+      return m_PointModified[pointId];
+    }
+
+    /** Sets the modified-value for a particular point. */
+    virtual void SetParameterizationModified( IndexType pointId, bool value )
+    {
+      m_PointModified[pointId] = value;
+    }
+
+    /** Sets the modified-values for all points. */
+    virtual void SetParameterizationModified( bool value )
+    {
+      for (unsigned int pointId=0; pointId<m_PointModified.size(); pointId++)
+      {
+        m_PointModified[pointId] = value;
+      }
+    }
+
+    /** Returns the number of 2D patches used to represent the entire
+    * parameterization of the mesh in the preferred way (i.e. without 
+    * too large distortions).
+    */
+    virtual IndexType GetNumberOfPatches() const = 0;
+
+    /** Returns the index of the patch which represents the specified
+    * triangle with the lowest possible distortion.
+    */
+    virtual IndexType GetPatchIndexForFace( IndexType faceId ) const = 0;
+
+    /** Maps the specified coordinates from parameter space to the given patch.
+    * The returned coordinates lie between [0..1] for both dimensions. 
+    */
+    virtual PatchPointType MapParameterizationToPatch( const PointType parameterCoordinates, IndexType patchIdx ) const = 0;
+
+    /** Maps the specified patch coordinates from the given patch to
+    * parameter space.
+    * Patch coordinates have to lie between [0..1] for both dimensions. 
+    */
+    virtual PointType MapPatchToParameterization( const PatchPointType patchCoordinates, IndexType patchIdx ) const = 0;
+
+    /** Copies all pointers of itk::Mesh (shallow copy) and all indexing 
+    * information of itk::IndexedTriangleMesh (deep copy). 
+    * Does not copy the parameterization data!
+    */
+    Pointer operator=( IndexedTriangleMeshPointer mesh )
+    {
+      Superclass::operator=( mesh );
+      return this;
+    }
+
+
+  protected:
+
+    /** Stores for each point of the parameterization if it is modified. */
+    std::vector<bool>   m_PointModified;
+  
+  };
+
+}
+#endif
+
